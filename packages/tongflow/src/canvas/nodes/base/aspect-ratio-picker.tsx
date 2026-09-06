@@ -11,6 +11,7 @@ interface AspectRatioPickerProps {
     value: AspectRatio;
     onChange: (ratio: AspectRatio) => void;
     showSize?: boolean;
+    sizeLabel?: string;
 }
 
 export function AspectRatioPicker({
@@ -18,6 +19,7 @@ export function AspectRatioPicker({
     value,
     onChange,
     showSize = true,
+    sizeLabel,
 }: AspectRatioPickerProps) {
     const t = useTranslations("Workspace.nodes");
 
@@ -28,7 +30,12 @@ export function AspectRatioPicker({
                     <RectangleHorizontal className="h-4 w-4" />
                     {t("common.aspectRatio")}
                 </Label>
-                <div className="grid grid-cols-5 gap-2">
+                <div
+                    className={cn(
+                        "grid gap-2",
+                        ratios.length === 6 ? "grid-cols-6" : "grid-cols-5",
+                    )}
+                >
                     {ratios.map((ratio) => {
                         const isSelected = value.value === ratio.value;
                         const iconSize = getAspectRatioIconSize(ratio.value);
@@ -68,7 +75,8 @@ export function AspectRatioPicker({
                 </div>
                 {showSize && (
                     <div className="text-xs text-muted-foreground text-center">
-                        {t("common.currentSize")} {value.width} × {value.height}
+                        {t("common.currentSize")}{" "}
+                        {sizeLabel ?? `${value.width} × ${value.height}`}
                     </div>
                 )}
             </div>

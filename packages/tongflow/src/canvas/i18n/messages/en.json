@@ -449,6 +449,7 @@
                 "musicBrief": "Music Brief"
             },
             "options": {
+                "auto": "Auto",
                 "portrait": "Portrait",
                 "landscape": "Landscape",
                 "square": "Square",

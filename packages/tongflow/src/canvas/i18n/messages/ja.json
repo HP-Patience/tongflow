@@ -449,6 +449,7 @@
                 "musicBrief": "音楽ブリーフ"
             },
             "options": {
+                "auto": "自動",
                 "portrait": "縦向き",
                 "landscape": "横向き",
                 "square": "正方形",

@@ -1,5 +1,6 @@
+import { useNodeId } from "@xyflow/react";
 import { Atom } from "lucide-react";
-import { memo, useCallback, useEffect, useMemo } from "react";
+import { memo, useCallback, useMemo } from "react";
 import { useTranslations } from "use-intl";
 import type { TongflowPluginNodeProps } from "../../../core";
 import {
@@ -9,6 +10,7 @@ import {
     type ResolutionTier,
 } from "../../../core";
 import { useAbiForm } from "../../hooks/use-abi-form";
+import useFlow from "../../hooks/use-flow";
 import { AbiNodeShell } from "../base/abi-node-shell";
 import { AspectRatioPicker } from "../base/aspect-ratio-picker";
 import { ResolutionPicker } from "../base/resolution-picker";
@@ -18,21 +20,52 @@ type TextGenImageNodeProps = TongflowPluginNodeProps<
     "textGenImageNode"
 >;
 
-// Default: 1:1 square at the 1K tier (1024 × 1024).
+const AUTO_RATIO: AspectRatio = {
+    value: "auto",
+    label: "auto",
+    width: 0,
+    height: 0,
+};
+const IMAGE_RATIO_OPTIONS = [AUTO_RATIO, ...IMAGE_ASPECT_RATIOS];
+const AUTO_TIER: ResolutionTier = {
+    value: "auto",
+    label: "Auto",
+    scale: 0,
+};
+const IMAGE_RESOLUTION_OPTIONS = [AUTO_TIER, ...IMAGE_RESOLUTION_TIERS];
+
+// Explicit sizes start from 1:1 at the 1K tier. New nodes default to Auto.
 const DEFAULT_RATIO =
     IMAGE_ASPECT_RATIOS.find((r) => r.value === "1:1") ??
     IMAGE_ASPECT_RATIOS[0];
 const DEFAULT_TIER = IMAGE_RESOLUTION_TIERS[0];
 
+export function imageSizeForSelection(
+    ratio: AspectRatio,
+    tier: ResolutionTier,
+): { width: number | undefined; height: number | undefined } {
+    if (ratio.value === "auto" || tier.value === "auto") {
+        return { width: undefined, height: undefined };
+    }
+    return {
+        width: ratio.width * tier.scale,
+        height: ratio.height * tier.scale,
+    };
+}
+
 const TextGenImageNode = ({ selected, data }: TextGenImageNodeProps) => {
     const t = useTranslations("Workspace.nodes");
     const { texts = [] } = data;
     const form = useAbiForm("image-gen");
+    const nodeId = useNodeId();
+    const updateNode = useFlow((state) => state.updates);
 
-    const width =
-        (form.state.width as number | undefined) ?? DEFAULT_RATIO.width;
-    const height =
-        (form.state.height as number | undefined) ?? DEFAULT_RATIO.height;
+    const storedWidth = form.state.width as number | undefined;
+    const storedHeight = form.state.height as number | undefined;
+    const hasStoredSize =
+        storedWidth !== undefined && storedHeight !== undefined;
+    const width = storedWidth ?? DEFAULT_RATIO.width;
+    const height = storedHeight ?? DEFAULT_RATIO.height;
 
     // ABI stores only width/height. Recover the (aspect ratio, tier) pair from
     // the persisted size: width/height = ratio base dims × tier scale.
@@ -48,36 +81,42 @@ const TextGenImageNode = ({ selected, data }: TextGenImageNodeProps) => {
         return { ratio: DEFAULT_RATIO, tier: DEFAULT_TIER };
     }, [width, height]);
 
-    // Persist the displayed default so execution sends the same size the picker
-    // shows (otherwise the plugin falls back to its own default resolution).
-    useEffect(() => {
-        if (form.state.width === undefined || form.state.height === undefined)
-            form.patch(
-                {
-                    width: DEFAULT_RATIO.width * DEFAULT_TIER.scale,
-                    height: DEFAULT_RATIO.height * DEFAULT_TIER.scale,
-                },
-                { history: false },
-            );
-    }, [form.state.width, form.state.height, form.patch]);
+    const savedRatioValue = (
+        data.selectedAspectRatio as AspectRatio | undefined
+    )?.value;
+    const savedTierValue = (
+        data.selectedResolution as ResolutionTier | undefined
+    )?.value;
+    const selectedRatio =
+        IMAGE_RATIO_OPTIONS.find((ratio) => ratio.value === savedRatioValue) ??
+        (hasStoredSize ? currentRatio : AUTO_RATIO);
+    const selectedTier =
+        IMAGE_RESOLUTION_OPTIONS.find(
+            (tier) => tier.value === savedTierValue,
+        ) ?? (hasStoredSize ? currentTier : AUTO_TIER);
+    const selectedSize = imageSizeForSelection(selectedRatio, selectedTier);
 
     const applySize = useCallback(
         (ratio: AspectRatio, tier: ResolutionTier) => {
-            form.patch({
-                width: ratio.width * tier.scale,
-                height: ratio.height * tier.scale,
+            if (!nodeId) return;
+            const size = imageSizeForSelection(ratio, tier);
+            updateNode(nodeId, {
+                ...data,
+                selectedAspectRatio: ratio,
+                selectedResolution: tier,
+                ...size,
             });
         },
-        [form],
+        [data, nodeId, updateNode],
     );
 
     const handleSelectRatio = useCallback(
-        (ratio: AspectRatio) => applySize(ratio, currentTier),
-        [applySize, currentTier],
+        (ratio: AspectRatio) => applySize(ratio, selectedTier),
+        [applySize, selectedTier],
     );
     const handleSelectTier = useCallback(
-        (tier: ResolutionTier) => applySize(currentRatio, tier),
-        [applySize, currentRatio],
+        (tier: ResolutionTier) => applySize(selectedRatio, tier),
+        [applySize, selectedRatio],
     );
 
     return (
@@ -94,14 +133,24 @@ const TextGenImageNode = ({ selected, data }: TextGenImageNodeProps) => {
         >
             <div className="p-4 space-y-4">
                 <AspectRatioPicker
-                    ratios={IMAGE_ASPECT_RATIOS}
-                    value={{ ...currentRatio, width, height }}
+                    ratios={IMAGE_RATIO_OPTIONS}
+                    value={{
+                        ...selectedRatio,
+                        width: selectedSize.width ?? 0,
+                        height: selectedSize.height ?? 0,
+                    }}
                     onChange={handleSelectRatio}
                     showSize
+                    sizeLabel={
+                        selectedRatio.value === "auto" ||
+                        selectedTier.value === "auto"
+                            ? t("options.auto")
+                            : undefined
+                    }
                 />
                 <ResolutionPicker
-                    tiers={IMAGE_RESOLUTION_TIERS}
-                    value={currentTier.value}
+                    tiers={IMAGE_RESOLUTION_OPTIONS}
+                    value={selectedTier.value}
                     onChange={handleSelectTier}
                 />
             </div>

@@ -26,7 +26,12 @@ export function ResolutionPicker({
                     <Maximize2 className="h-4 w-4" />
                     {t("common.resolution")}
                 </Label>
-                <div className="grid grid-cols-3 gap-2">
+                <div
+                    className={cn(
+                        "grid gap-2",
+                        tiers.length === 4 ? "grid-cols-4" : "grid-cols-3",
+                    )}
+                >
                     {tiers.map((tier) => {
                         const isSelected = value === tier.value;
                         return (
@@ -42,7 +47,9 @@ export function ResolutionPicker({
                                         : "hover:bg-accent hover:text-accent-foreground",
                                 )}
                             >
-                                {tier.label}
+                                {tier.value === "auto"
+                                    ? t("options.auto")
+                                    : tier.label}
                             </Button>
                         );
                     })}

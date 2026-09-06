@@ -449,6 +449,7 @@
                 "musicBrief": "音乐企划"
             },
             "options": {
+                "auto": "自动",
                 "portrait": "竖屏",
                 "landscape": "宽屏",
                 "square": "正方形",
