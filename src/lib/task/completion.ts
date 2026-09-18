@@ -87,43 +87,47 @@ function extractOutputs(data: TaskCompletionData): {
     fileKeys: string[];
     texts: string[];
 } {
-    const fileKeys: string[] = [];
-    const texts: string[] = [];
+    const fileKeys = new Set<string>();
+    const texts = new Set<string>();
+    const addStrings = (target: Set<string>, value: unknown) => {
+        for (const item of Array.isArray(value) ? value : [value]) {
+            if (typeof item === "string" && item.trim()) target.add(item);
+        }
+    };
 
-    if (data.file_key) fileKeys.push(data.file_key);
-    if (data.file_keys) fileKeys.push(...data.file_keys);
-    if (data.text) texts.push(data.text);
-    if (data.texts) texts.push(...data.texts);
-
-    if (data.outputs && typeof data.outputs === "object") {
-        for (const value of Object.values(
-            data.outputs as Record<string, unknown>,
-        )) {
-            if (Array.isArray(value)) {
-                for (const item of value) {
-                    if (typeof item === "string") {
-                        const isFile =
-                            item.includes("/") ||
-                            (item.includes(".") &&
-                                /\.(jpg|jpeg|png|gif|webp|mp4|webm|mov|mp3|wav|glb|gltf|obj|pdf|doc|docx)$/i.test(
-                                    item,
-                                ));
-                        if (isFile) {
-                            fileKeys.push(item);
-                        } else {
-                            texts.push(item);
-                        }
-                    }
+    const visit = (value: unknown, legacyOutputs = false): void => {
+        if (Array.isArray(value)) {
+            for (const item of value) {
+                if (legacyOutputs && typeof item === "string") {
+                    const isFile =
+                        /[/\\]/.test(item) ||
+                        /\.(jpg|jpeg|png|gif|webp|mp4|webm|mov|mp3|wav|glb|gltf|obj|pdf|doc|docx)$/i.test(
+                            item,
+                        );
+                    addStrings(isFile ? fileKeys : texts, item);
+                } else {
+                    visit(item, legacyOutputs);
+                }
+            }
+        } else if (value && typeof value === "object") {
+            for (const [key, item] of Object.entries(value)) {
+                if (key === "file_key" || key === "file_keys") {
+                    addStrings(fileKeys, item);
+                } else if (key === "text" || key === "texts") {
+                    addStrings(texts, item);
+                } else {
+                    // ABI assets may be nested under image/video/etc. or workflow node IDs.
+                    visit(item, legacyOutputs || key === "outputs");
                 }
             }
         }
-    }
-
-    return { fileKeys, texts };
+    };
+    visit(data);
+    return { fileKeys: [...fileKeys], texts: [...texts] };
 }
 
 export interface TaskCompletionOptions {
-    source?: "webhook" | "frontend";
+    source?: "webhook" | "frontend" | "runner";
     skipMaterialSave?: boolean;
 }
 
@@ -134,7 +138,7 @@ export async function handleTaskCompletion(
     options: TaskCompletionOptions = {},
 ): Promise<TaskCompletionResult> {
     const { source = "webhook", skipMaterialSave = false } = options;
-    const logPrefix = `[${source === "webhook" ? "Webhook" : "Frontend"}]`;
+    const logPrefix = `[${source}]`;
 
     try {
         const db = await getDb();
@@ -199,7 +203,13 @@ export async function handleTaskCompletion(
             );
         }
 
-        if (dbStatus !== "completed" || !data || skipMaterialSave) {
+        if (
+            dbStatus !== "completed" ||
+            !data ||
+            skipMaterialSave ||
+            (terminalStatuses.includes(currentStatus) &&
+                currentStatus !== "completed")
+        ) {
             if (skipMaterialSave) {
                 logger.debug(
                     `${logPrefix} Skipping material save for task ${taskId} (skipMaterialSave=true)`,
@@ -208,99 +218,107 @@ export async function handleTaskCompletion(
             return { success: true, taskUpdated, savedMaterials: 0 };
         }
 
-        const existingMaterials = await db
-            .select({ id: materials.id })
-            .from(materials)
-            .where(eq(materials.taskId, taskId))
-            .limit(1);
+        // Keep the existence check and every insert atomic across completion callbacks.
+        return db.transaction((tx) => {
+            const existingMaterials = tx
+                .select({ id: materials.id })
+                .from(materials)
+                .where(eq(materials.taskId, taskId))
+                .limit(1)
+                .all();
 
-        if (existingMaterials.length > 0) {
-            logger.debug(
-                `${logPrefix} Materials for task ${taskId} already exist, skipping (idempotent)`,
-            );
-            return { success: true, taskUpdated, savedMaterials: 0 };
-        }
-
-        const { fileKeys, texts } = extractOutputs(data);
-
-        if (fileKeys.length === 0 && texts.length === 0) {
-            logger.debug(`${logPrefix} No outputs to save for task ${taskId}`);
-            return { success: true, taskUpdated, savedMaterials: 0 };
-        }
-
-        const taskName = data.feature || "Task";
-        const savedMaterialIds: number[] = [];
-
-        for (const fileKey of fileKeys) {
-            const type = inferMaterialType(fileKey);
-            const materialName = generateMaterialName(taskName, type);
-
-            const result = await db
-                .insert(materials)
-                .values({
-                    taskId,
-                    workflowId: workflowId ?? undefined,
-                    name: materialName,
-                    type,
-                    content: JSON.stringify({ fileKeys: [fileKey] }),
-                    thumbnail:
-                        type === "image" || type === "video"
-                            ? fileKey
-                            : undefined,
-                })
-                .returning({ id: materials.id });
-
-            savedMaterialIds.push(result[0].id);
-            logger.debug(
-                `${logPrefix} Saved ${type}: ${fileKey} -> material ${result[0].id}`,
-            );
-        }
-
-        if (texts.length > 0) {
-            const materialName = generateMaterialName(taskName, "text");
-
-            const result = await db
-                .insert(materials)
-                .values({
-                    taskId,
-                    workflowId: workflowId ?? undefined,
-                    name: materialName,
-                    type: "text",
-                    content: JSON.stringify({ texts }),
-                })
-                .returning({ id: materials.id });
-
-            savedMaterialIds.push(result[0].id);
-            logger.debug(
-                `${logPrefix} Saved text (${texts.length} items) -> material ${result[0].id}`,
-            );
-        }
-
-        if (workflowId) {
-            const coverFileKey = fileKeys.find((key) => {
-                const type = inferMaterialType(key);
-                return type === "image" || type === "video";
-            });
-
-            if (coverFileKey) {
-                await db
-                    .update(workflows)
-                    .set({ cover: coverFileKey })
-                    .where(eq(workflows.id, workflowId));
+            if (existingMaterials.length > 0) {
                 logger.debug(
-                    `${logPrefix} Updated workflow ${workflowId} cover: ${coverFileKey}`,
+                    `${logPrefix} Materials for task ${taskId} already exist, skipping (idempotent)`,
+                );
+                return { success: true, taskUpdated, savedMaterials: 0 };
+            }
+
+            const { fileKeys, texts } = extractOutputs(data);
+
+            if (fileKeys.length === 0 && texts.length === 0) {
+                logger.debug(
+                    `${logPrefix} No outputs to save for task ${taskId}`,
+                );
+                return { success: true, taskUpdated, savedMaterials: 0 };
+            }
+
+            const taskName = data.feature || "Task";
+            const savedMaterialIds: number[] = [];
+
+            for (const fileKey of fileKeys) {
+                const type = inferMaterialType(fileKey);
+                const materialName = generateMaterialName(taskName, type);
+
+                const result = tx
+                    .insert(materials)
+                    .values({
+                        taskId,
+                        workflowId: workflowId ?? undefined,
+                        name: materialName,
+                        type,
+                        content: JSON.stringify({ fileKeys: [fileKey] }),
+                        thumbnail:
+                            type === "image" || type === "video"
+                                ? fileKey
+                                : undefined,
+                    })
+                    .returning({ id: materials.id })
+                    .all();
+
+                savedMaterialIds.push(result[0].id);
+                logger.debug(
+                    `${logPrefix} Saved ${type}: ${fileKey} -> material ${result[0].id}`,
                 );
             }
-        }
 
-        logger.debug(
-            `${logPrefix} Saved ${savedMaterialIds.length} materials for task ${taskId}`,
-        );
-        return {
-            success: true,
-            taskUpdated,
-            savedMaterials: savedMaterialIds.length,
-        };
+            if (texts.length > 0) {
+                const materialName = generateMaterialName(taskName, "text");
+
+                const result = tx
+                    .insert(materials)
+                    .values({
+                        taskId,
+                        workflowId: workflowId ?? undefined,
+                        name: materialName,
+                        type: "text",
+                        content: JSON.stringify({ texts }),
+                    })
+                    .returning({ id: materials.id })
+                    .all();
+
+                savedMaterialIds.push(result[0].id);
+                logger.debug(
+                    `${logPrefix} Saved text (${texts.length} items) -> material ${result[0].id}`,
+                );
+            }
+
+            if (workflowId) {
+                const coverFileKey = fileKeys.find((key) => {
+                    const type = inferMaterialType(key);
+                    return type === "image" || type === "video";
+                });
+
+                if (coverFileKey) {
+                    tx.update(workflows)
+                        .set({ cover: coverFileKey })
+                        .where(eq(workflows.id, workflowId))
+                        .run();
+                    logger.debug(
+                        `${logPrefix} Updated workflow ${workflowId} cover: ${coverFileKey}`,
+                    );
+                }
+            }
+
+            logger.debug(
+                `${logPrefix} Saved ${savedMaterialIds.length} materials for task ${taskId}`,
+            );
+            return {
+                success: true,
+                taskUpdated,
+                savedMaterials: savedMaterialIds.length,
+            };
+        });
     } catch (error) {
         logger.error(`${logPrefix} Error processing task ${taskId}:`, error);
         return {

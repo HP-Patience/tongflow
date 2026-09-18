@@ -41,6 +41,18 @@ const payload = {
 };
 
 describe("filterModelCatalog", () => {
+    it("accepts every model for a slot with no filter rules", () => {
+        const c = PluginModelCatalogSchema.parse({
+            urlEnv: "EXAMPLE_BASE_URL",
+            path: "/models",
+            authEnv: "EXAMPLE_API_KEY",
+            slots: { "gen-text": {} },
+        });
+        expect(
+            filterModelCatalog(c, { data: [{ id: "m1" }, { id: "m2" }] }),
+        ).toEqual({ "gen-text": ["m1", "m2"] });
+    });
+
     it("keeps ids whose fields contain every slot token, in catalog order", () => {
         expect(filterModelCatalog(catalog, payload)).toEqual({
             "gen-text": ["chat-a"],

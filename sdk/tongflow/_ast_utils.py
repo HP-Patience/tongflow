@@ -347,6 +347,9 @@ def extract_model_catalog(
 
         TONGFLOW_MODEL_CATALOG = {
             "url": "https://api.example.com/api/models",  # GET, no auth, CORS
+            # Or resolve a private endpoint from settings, server-side:
+            # "urlEnv": "EXAMPLE_BASE_URL",
+            # "path": "/models",
             "authEnv": "EXAMPLE_API_KEY",  # optional: bearer token env key; the
                                            # app proxies the fetch server-side
             "items": "data",      # dot path to the record array (default "data")
@@ -383,11 +386,13 @@ def extract_model_catalog(
             problems.append((node.lineno, f"{MODEL_CATALOG_CONST} {reason}"))
             return None, problems
         catalog: dict = {
-            "url": raw["url"],
             "items": raw.get("items", "data"),
             "id": raw.get("id", "id"),
             "slots": raw["slots"],
         }
+        for key in ("url", "urlEnv", "path"):
+            if raw.get(key):
+                catalog[key] = raw[key]
         if raw.get("exclude"):
             catalog["exclude"] = raw["exclude"]
         if raw.get("authEnv"):
@@ -401,13 +406,23 @@ def _validate_model_catalog(raw: object) -> str | None:
 
     if not isinstance(raw, dict):
         return "must be a dict literal"
-    allowed = {"url", "authEnv", "items", "id", "exclude", "slots"}
+    allowed = {"url", "urlEnv", "path", "authEnv", "items", "id", "exclude", "slots"}
     unknown = set(raw) - allowed
     if unknown:
         return f"has unknown keys {sorted(unknown)!r}"
     url = raw.get("url")
-    if not (isinstance(url, str) and url.startswith(("https://", "http://"))):
+    url_env = raw.get("urlEnv")
+    if bool(url) == bool(url_env):
+        return "must provide exactly one of 'url' or 'urlEnv'"
+    if url and not (isinstance(url, str) and url.startswith(("https://", "http://"))):
         return "'url' must be an http(s) URL string"
+    if url_env and not (isinstance(url_env, str) and url_env.strip()):
+        return "'urlEnv' must be a non-empty env var name"
+    path = raw.get("path")
+    if path is not None and not (
+        url_env and isinstance(path, str) and path.startswith("/")
+    ):
+        return "'path' must start with '/' and requires 'urlEnv'"
     for key in ("items", "id"):
         if key in raw and not (isinstance(raw[key], str) and raw[key].strip()):
             return f"'{key}' must be a non-empty dot-path string"
@@ -425,8 +440,8 @@ def _validate_model_catalog(raw: object) -> str | None:
     for slot, rules in slots.items():
         if not (isinstance(slot, str) and slot):
             return "'slots' keys must be non-empty strings"
-        if not isinstance(rules, dict) or not rules:
-            return f"'slots'[{slot!r}] must be a non-empty dict of field -> token"
+        if not isinstance(rules, dict):
+            return f"'slots'[{slot!r}] must be a dict of field -> token"
         for field, token in rules.items():
             tokens = token if isinstance(token, list) else [token]
             if not (

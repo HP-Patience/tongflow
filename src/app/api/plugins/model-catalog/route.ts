@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
+import { resolveModelCatalogUrl } from "@/lib/plugins/model-catalog-url";
 import { loadPluginsRegistry } from "@/lib/plugins/plugins-registry.server";
 import { loadEnvStore } from "@/lib/settings/env-store.server";
 
@@ -23,10 +24,10 @@ export async function GET(req: NextRequest) {
         );
     }
     const headers: Record<string, string> = { Accept: "application/json" };
+    const storedEnv = await loadEnvStore();
     if (catalog.authEnv) {
-        const env = await loadEnvStore();
         const token = (
-            env[catalog.authEnv] ??
+            storedEnv[catalog.authEnv] ??
             process.env[catalog.authEnv] ??
             ""
         ).trim();
@@ -38,9 +39,21 @@ export async function GET(req: NextRequest) {
         }
         headers.Authorization = `Bearer ${token}`;
     }
+    let catalogUrl: string;
+    try {
+        catalogUrl = resolveModelCatalogUrl(catalog, {
+            ...process.env,
+            ...storedEnv,
+        });
+    } catch (e) {
+        return NextResponse.json(
+            { error: e instanceof Error ? e.message : String(e) },
+            { status: 412 },
+        );
+    }
     let upstream: Response;
     try {
-        upstream = await fetch(catalog.url, {
+        upstream = await fetch(catalogUrl, {
             headers,
             cache: "no-store",
             signal: AbortSignal.timeout(15_000),

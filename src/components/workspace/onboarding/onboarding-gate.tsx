@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useEnvSetup } from "@/hooks/use-env-setup";
-import { SetupBanner } from "./setup-banner";
 import { WelcomeWizard } from "./welcome-wizard";
 
 const DISMISSED_KEY = "tongflow.onboarding.v1.dismissed";
@@ -11,7 +10,7 @@ const DISMISSED_KEY = "tongflow.onboarding.v1.dismissed";
  * Single mount point for first-run onboarding. Waits for the setup status
  * fetch before deciding (a returning user on a fresh browser whose Modal is
  * already connected must never see the wizard), then shows the one-shot
- * welcome wizard and/or the persistent setup banner until Modal is connected.
+ * welcome wizard. Modal connection remains available in Settings.
  */
 export function OnboardingGate() {
     const { modalConnected, modalRelevant } = useEnvSetup();
@@ -41,12 +40,5 @@ export function OnboardingGate() {
         }
     };
 
-    const showBanner = modalRelevant && modalConnected === false && !wizardOpen;
-
-    return (
-        <>
-            <WelcomeWizard open={wizardOpen} onClose={dismissWizard} />
-            {showBanner ? <SetupBanner /> : null}
-        </>
-    );
+    return <WelcomeWizard open={wizardOpen} onClose={dismissWizard} />;
 }

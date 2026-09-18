@@ -16,6 +16,7 @@ import {
     serializeTaskErrorForDb,
     workflowTaskFailureEnvelope,
 } from "@/lib/task/error-envelope";
+import { handleTaskCompletion } from "./completion";
 import { notifyTask, registerTask, removeTask } from "./emitter";
 import {
     issueEngineAssetToken,
@@ -289,11 +290,6 @@ export async function executeWorkflowViaEngine(
                     const result = finalResult as Record<string, unknown>;
                     const outputs = result.outputs ?? {};
                     if (result.status === "success") {
-                        notifyTask(taskId, WorkflowStatus.WORKFLOW_COMPLETED, {
-                            status: "success",
-                            outputs,
-                            totalDuration: 0,
-                        });
                         await db
                             .update(tasks)
                             .set({
@@ -301,6 +297,17 @@ export async function executeWorkflowViaEngine(
                                 result: JSON.stringify(outputs),
                             })
                             .where(eq(tasks.id, taskId));
+                        await handleTaskCompletion(
+                            taskId,
+                            WorkflowStatus.WORKFLOW_COMPLETED,
+                            { outputs: outputs as Record<string, unknown> },
+                            { source: "runner" },
+                        );
+                        notifyTask(taskId, WorkflowStatus.WORKFLOW_COMPLETED, {
+                            status: "success",
+                            outputs,
+                            totalDuration: 0,
+                        });
                     } else {
                         const errors = Array.isArray(result.errors)
                             ? (result.errors as string[])

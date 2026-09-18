@@ -20,6 +20,7 @@ import { findMissingRequiredKey } from "@/lib/plugins/missing-env-key";
 import { loadPluginEnvDecls } from "@/lib/plugins/plugin-env-manifests.server";
 import { loadEnvStore } from "@/lib/settings/env-store.server";
 import { serializeTaskErrorForDb } from "@/lib/task/error-envelope";
+import { handleTaskCompletion } from "./completion";
 import { notifyTask, registerTask, removeTask } from "./emitter";
 import { executeWorkflowViaEngine } from "./engine-delegate.server";
 
@@ -294,12 +295,6 @@ export async function executeTask(taskId: string): Promise<void> {
             logger.info(
                 `[TaskRunner] task=${taskId} plugin returned success=true`,
             );
-            notifyTask(
-                taskId,
-                TaskStatus.COMPLETED,
-                result as Record<string, unknown>,
-                taskData.nodeId,
-            );
             await db
                 .update(tasks)
                 .set({
@@ -307,6 +302,15 @@ export async function executeTask(taskId: string): Promise<void> {
                     result: JSON.stringify(result),
                 })
                 .where(eq(tasks.id, taskId));
+            await handleTaskCompletion(taskId, TaskStatus.COMPLETED, result, {
+                source: "runner",
+            });
+            notifyTask(
+                taskId,
+                TaskStatus.COMPLETED,
+                result as Record<string, unknown>,
+                taskData.nodeId,
+            );
         }
     } catch (error) {
         if (controller.signal.aborted) return;

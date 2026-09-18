@@ -140,35 +140,44 @@ export const useLiveModelsStore = create<LiveModelsState>(() => ({
 }));
 
 const MODEL_CATALOG_TTL_MS = 10 * 60 * 1000;
-const catalogInflight = new Map<string, Promise<void>>();
+const catalogInflight = new Map<string, Promise<number>>();
 
 /**
  * Fetch (or refresh, once the TTL elapsed) a plugin's live model catalog. Safe
  * to call eagerly — it is a no-op for plugins without a catalog and while a
  * fresh result is cached.
  */
-export async function loadPluginModelCatalog(pluginId: string): Promise<void> {
+export async function loadPluginModelCatalog(
+    pluginId: string,
+    options?: { force?: boolean; throwOnError?: boolean },
+): Promise<number> {
     const catalog =
         usePluginsRegistryStore.getState().registry?.plugins?.[pluginId]
             ?.modelCatalog;
-    if (!catalog) return;
+    if (!catalog) return 0;
     const cached = useLiveModelsStore.getState().byPlugin[pluginId];
-    if (cached && Date.now() - cached.fetchedAt < MODEL_CATALOG_TTL_MS) return;
+    if (
+        !options?.force &&
+        cached &&
+        Date.now() - cached.fetchedAt < MODEL_CATALOG_TTL_MS
+    )
+        return new Set(Object.values(cached.bySlot).flat()).size;
     const inflight = catalogInflight.get(pluginId);
     if (inflight) return inflight;
     const job = (async () => {
         try {
-            const res = catalog.authEnv
-                ? await hostFetch(
-                      apiUrl(
-                          `/api/plugins/model-catalog?pluginId=${encodeURIComponent(pluginId)}`,
-                      ),
-                      { cache: "no-store", credentials: "same-origin" },
-                  )
-                : await fetch(catalog.url, {
-                      method: "GET",
-                      cache: "no-store",
-                  });
+            const res =
+                catalog.authEnv || catalog.urlEnv
+                    ? await hostFetch(
+                          apiUrl(
+                              `/api/plugins/model-catalog?pluginId=${encodeURIComponent(pluginId)}`,
+                          ),
+                          { cache: "no-store", credentials: "same-origin" },
+                      )
+                    : await fetch(catalog.url!, {
+                          method: "GET",
+                          cache: "no-store",
+                      });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const bySlot = filterModelCatalog(catalog, await res.json());
             useLiveModelsStore.setState((s) => ({
@@ -177,12 +186,15 @@ export async function loadPluginModelCatalog(pluginId: string): Promise<void> {
                     [pluginId]: { fetchedAt: Date.now(), bySlot },
                 },
             }));
+            return new Set(Object.values(bySlot).flat()).size;
         } catch (e) {
             // Keep the static shortlist; retry after the TTL like a miss.
             console.warn(
                 `[tongflow] model catalog for ${pluginId} unavailable:`,
                 e,
             );
+            if (options?.throwOnError) throw e;
+            return 0;
         } finally {
             catalogInflight.delete(pluginId);
         }

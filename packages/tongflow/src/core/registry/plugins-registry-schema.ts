@@ -37,7 +37,12 @@ export const PluginMethodSchema = z.object({
  * that slot's dropdown after the static `models` shortlist.
  */
 export const PluginModelCatalogSchema = z.object({
-    url: z.string().url(),
+    /** Fixed catalog URL. Mutually exclusive with `urlEnv`. */
+    url: z.string().url().optional(),
+    /** Env key containing an endpoint base URL, resolved server-side. */
+    urlEnv: z.string().min(1).optional(),
+    /** Path appended to `urlEnv` (for example `/models`). */
+    path: z.string().startsWith("/").optional(),
     /** Env key whose value is sent as `Authorization: Bearer …`; the fetch is
      * proxied server-side so the key never reaches the browser. */
     authEnv: z.string().min(1).optional(),

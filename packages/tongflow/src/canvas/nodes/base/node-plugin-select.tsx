@@ -1,7 +1,7 @@
 "use client";
 
 import { HelpCircle } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { useTranslations } from "use-intl";
 import { Card } from "../../ui/card";
 import { Label } from "../../ui/label";
@@ -31,6 +31,9 @@ type NodePluginSelectProps = {
     title?: string;
     /** Dropdown open/close notification (e.g. to refresh a live list). */
     onOpenChange?: (open: boolean) => void;
+    /** Optional action rendered beside the card label. */
+    titleAction?: ReactNode;
+    children?: ReactNode;
 };
 
 /** Monogram fallback shown when a plugin has no icon (or it fails to load). */
@@ -73,14 +76,19 @@ export function NodePluginSelect({
     options,
     title,
     onOpenChange,
+    titleAction,
+    children,
 }: NodePluginSelectProps) {
     const t = useTranslations("Workspace.nodes.base");
     return (
         <Card className="p-3">
             <div className="space-y-2">
-                <Label className="text-sm font-medium text-muted-foreground">
-                    {title ?? t("pluginImplementationTitle")}
-                </Label>
+                <div className="flex items-center justify-between gap-2">
+                    <Label className="text-sm font-medium text-muted-foreground">
+                        {title ?? t("pluginImplementationTitle")}
+                    </Label>
+                    {titleAction}
+                </div>
                 <Select
                     value={value}
                     onValueChange={onValueChange}
@@ -131,6 +139,7 @@ export function NodePluginSelect({
                         ))}
                     </SelectContent>
                 </Select>
+                {children}
             </div>
         </Card>
     );

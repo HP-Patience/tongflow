@@ -17,16 +17,6 @@
     "homepage": "https://github.com/tong-io/tongflow#readme",
     "license": "AGPL-3.0-only",
     "private": true,
-    "pnpm": {
-        "onlyBuiltDependencies": [
-            "@swc/core",
-            "better-sqlite3",
-            "cbor-extract",
-            "esbuild",
-            "protobufjs",
-            "sharp"
-        ]
-    },
     "scripts": {
         "predev": "pnpm gen:abi",
         "dev": "next dev",

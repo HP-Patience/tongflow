@@ -73,3 +73,6 @@ __pycache__/
 
 # workspace package build output
 packages/*/dist
+
+# Local browser debugging artifacts
+/.playwright-mcp/
