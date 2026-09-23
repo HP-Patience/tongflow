@@ -9,6 +9,7 @@ import type { BaseNodeData } from "../../../core";
 import useFlow from "../../hooks/use-flow";
 import {
     loadPluginModelCatalog,
+    useLiveModelsStore,
     useNodePluginModels,
     usePluginsRegistryStore,
 } from "../../hooks/use-plugins-registry";
@@ -46,6 +47,11 @@ export function NodePluginModelSelect({
     const hasCatalog = usePluginsRegistryStore((state) =>
         Boolean(state.registry?.plugins?.[pluginId]?.modelCatalog),
     );
+    const registryLoaded = usePluginsRegistryStore((state) => state.isLoaded);
+    const catalogLoaded = useLiveModelsStore((state) =>
+        Boolean(state.byPlugin[pluginId]),
+    );
+    const modelsLoaded = registryLoaded && (!hasCatalog || catalogLoaded);
     const [refreshing, setRefreshing] = useState(false);
     const [editingCustom, setEditingCustom] = useState(false);
     const [customModel, setCustomModel] = useState("");
@@ -57,17 +63,22 @@ export function NodePluginModelSelect({
     }, [pluginId]);
 
     const current = String(data.pluginModel ?? "").trim();
-    const resolved = resolvePluginModel(current, models, allowCustom);
+    const resolved = resolvePluginModel(
+        current,
+        models,
+        allowCustom,
+        modelsLoaded,
+    );
 
     // Persist the default (or replace a stale model after a plugin switch)
     // after paint, mirroring the pluginId default write in
     // useNodePluginResolver.
     useEffect(() => {
-        if (resolved === current) return;
+        if (!modelsLoaded || resolved === current) return;
         // Programmatic normalization — must not create (or invalidate) undo
         // history, or it re-fires after every undo and breaks the chain.
         updates(id, { ...data, pluginModel: resolved }, { history: false });
-    }, [id, data, current, resolved, updates]);
+    }, [id, data, current, resolved, updates, modelsLoaded]);
 
     const options = useMemo(() => {
         const choices =

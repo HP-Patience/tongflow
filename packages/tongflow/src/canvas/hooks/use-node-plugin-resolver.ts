@@ -1,7 +1,10 @@
 import { useNodeId, useReactFlow } from "@xyflow/react";
 import { useCallback, useEffect } from "react";
+import { resolvePluginModel } from "../nodes/base/plugin-model-selection";
 import {
     getNodePluginModels,
+    useLiveModelsStore,
+    usePluginsRegistryStore,
     useNodePluginIds,
     usePluginsRegistry,
 } from "./use-plugins-registry";
@@ -40,7 +43,10 @@ export function useNodePluginResolver(feature: string | undefined) {
             typeof d?.pluginId === "string" ? d.pluginId : ""
         ).trim();
         if (current && pluginOptions.includes(current)) return;
-        updateNodeData(nodeId, { pluginId: defaultPluginIdFromRegistry });
+        updateNodeData(nodeId, {
+            pluginId: defaultPluginIdFromRegistry,
+            ...(current ? { pluginModel: undefined } : {}),
+        });
     }, [
         nodeId,
         feature,
@@ -70,23 +76,33 @@ export function useNodePluginResolver(feature: string | undefined) {
     }, [nodeId, getNode, defaultPluginIdFromRegistry, pluginOptions]);
 
     /**
-     * Model for router-style plugins: the node's `pluginModel` when it is one
-     * of the active plugin's models (declared shortlist or live catalog), else
-     * that plugin's default (first declared model). `undefined` when the
-     * plugin declares none — the create-task API then omits the field entirely.
+     * Use the same model policy as the dropdown, including custom IDs for
+     * OpenAI-compatible providers. Empty selections omit the API model field.
      */
     const resolveActiveModel = useCallback((): string | undefined => {
         if (!feature) return undefined;
         const pluginId = resolveActivePluginId();
         if (!pluginId) return undefined;
         const models = getNodePluginModels(feature, pluginId);
-        if (models.length === 0) return undefined;
+        const { registry, isLoaded } = usePluginsRegistryStore.getState();
+        const hasCatalog = Boolean(registry?.plugins?.[pluginId]?.modelCatalog);
+        const modelsLoaded =
+            isLoaded &&
+            (!hasCatalog ||
+                Boolean(useLiveModelsStore.getState().byPlugin[pluginId]));
         const n = nodeId ? getNode(nodeId) : undefined;
         const fromData = String(
             (n?.data as { pluginModel?: string } | undefined)?.pluginModel ??
                 "",
         ).trim();
-        return models.includes(fromData) ? fromData : models[0];
+        return (
+            resolvePluginModel(
+                fromData,
+                models,
+                pluginId === "tongflow-api-openai-compatible",
+                modelsLoaded,
+            ) || undefined
+        );
     }, [feature, nodeId, getNode, resolveActivePluginId]);
 
     return {

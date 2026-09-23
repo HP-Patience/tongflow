@@ -20,7 +20,14 @@ import {
 } from "@xyflow/react";
 import { v4 } from "uuid";
 import { create } from "zustand";
-import { createFlowSlice, type FlowCoreState } from "../../core";
+import {
+    createFlowSlice,
+    featureForNodeType,
+    type FlowCoreState,
+} from "../../core";
+
+import { readImageSelection } from "./image-generation-preferences";
+import { usePluginsRegistryStore } from "./use-plugins-registry";
 
 export type { PossibleNode } from "../../core";
 
@@ -127,6 +134,36 @@ export const useFlow = create<FlowState>()((set, get) => ({
         });
     },
 }));
+
+// All creation paths (Smart Island, add, compose) announce only fresh nodes.
+// Restores/imports and reused cards are deliberately not changed.
+useFlow.getState().onNodeCreated((ids) => {
+    const flow = useFlow.getState();
+    const registry = usePluginsRegistryStore.getState().registry;
+    for (const id of ids) {
+        const node = flow.nodes.find((n) => n.id === id);
+        if (
+            !node ||
+            node.data.pluginId ||
+            node.data.pluginRepo ||
+            node.data.pluginModel
+        )
+            continue;
+        const feature = featureForNodeType(node.type);
+        const selection = readImageSelection(
+            feature,
+            registry && feature
+                ? (registry.nodePluginMap[feature] ?? [])
+                : undefined,
+        );
+        if (selection)
+            flow.updates(
+                id,
+                { ...node.data, ...selection },
+                { history: false },
+            );
+    }
+});
 
 // Persistence: mirror the document into localStorage (debounced) whenever the
 // relevant slice of state changes.

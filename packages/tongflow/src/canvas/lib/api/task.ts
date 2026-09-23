@@ -2,6 +2,7 @@
  * Task API client
  */
 
+import { rememberImageSelection } from "../../hooks/image-generation-preferences";
 import { apiGet, apiPost } from "./client";
 
 /** A persisted task row as returned by the task list API. */
@@ -38,7 +39,12 @@ export interface CreateTaskResponse {
 export async function createTask(
     config: CreateTaskRequest,
 ): Promise<CreateTaskResponse> {
-    return await apiPost<CreateTaskResponse>("/api/task/create", config);
+    const response = await apiPost<CreateTaskResponse>(
+        "/api/task/create",
+        config,
+    );
+    rememberImageSelection(config);
+    return response;
 }
 
 export interface ListTasksResponse {

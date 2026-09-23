@@ -3,9 +3,10 @@ export function resolvePluginModel(
     current: string,
     models: string[],
     allowCustom: boolean,
+    modelsLoaded = true,
 ): string {
     const value = current.trim();
-    return value && (allowCustom || models.includes(value))
+    return value && (!modelsLoaded || allowCustom || models.includes(value))
         ? value
         : (models[0] ?? "");
 }

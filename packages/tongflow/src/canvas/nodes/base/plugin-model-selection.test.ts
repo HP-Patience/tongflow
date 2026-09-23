@@ -24,6 +24,17 @@ describe("resolvePluginModel", () => {
             "custom-image",
         );
     });
+    it("keeps saved catalog models until the registry and catalog are loaded", () => {
+        expect(resolvePluginModel("last-image", [], false, false)).toBe(
+            "last-image",
+        );
+        expect(
+            resolvePluginModel("last-image", ["default"], false, false),
+        ).toBe("last-image");
+        expect(
+            resolvePluginModel("removed-image", ["default"], false, true),
+        ).toBe("default");
+    });
     it("trims custom IDs and uses the default for whitespace", () => {
         expect(resolvePluginModel(" custom-image ", models, true)).toBe(
             "custom-image",
