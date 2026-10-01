@@ -53,9 +53,10 @@ export const VIDEO_DURATION_MIN = 1;
 export const VIDEO_DURATION_MAX = 30;
 export const VIDEO_DURATION_DEFAULT = 5;
 
-export function clampVideoDuration(raw: number): number {
+export function clampVideoDuration(raw: number, model?: string): number {
+    const max = model === "grok-imagine-video-1.5" ? 15 : VIDEO_DURATION_MAX;
     const v = Math.round(raw);
-    return Math.max(VIDEO_DURATION_MIN, Math.min(VIDEO_DURATION_MAX, v));
+    return Math.max(VIDEO_DURATION_MIN, Math.min(max, v));
 }
 
 /** Icon sizing lookup for aspect ratio thumbnails */

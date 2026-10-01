@@ -105,7 +105,10 @@ const PROVIDER_KEY_PATTERNS: Record<
         pattern: /r8_[A-Za-z0-9]{10,}/,
         placeholder: "r8_…",
     },
-    XAI_API_KEY: { pattern: /xai-[A-Za-z0-9_-]{10,}/, placeholder: "xai-…" },
+    XAI_API_KEY: {
+        pattern: /(?:xai|sk)-[A-Za-z0-9_-]{10,}/,
+        placeholder: "xai-… / sk-…",
+    },
     GEMINI_API_KEY: {
         pattern: /AIza[A-Za-z0-9_-]{10,}/,
         placeholder: "AIza…",
